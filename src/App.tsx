@@ -1,21 +1,24 @@
-/* eslint-disable jsx-a11y/label-has-associated-control */
-/* eslint-disable jsx-a11y/control-has-associated-label */
-import React, { useEffect, useState } from 'react';
-import classNames from 'classnames';
+import React, { useEffect, useRef, useState } from 'react';
 import { UserWarning } from './UserWarning';
 import { getTodos, USER_ID } from './api/todos';
+import { Header } from './components/Header';
+import { TodoList } from './components/TodoList';
+import { Footer } from './components/Footer';
+import { ErrorNotification } from './components/ErrorNotification';
 import { Todo } from './types/Todo';
+import { Status } from './types/Status';
+import { ErrorMessage } from './types/ErrorMessage';
 
-enum Status {
-  All = 'All',
-  Active = 'Active',
-  Completed = 'Completed',
-}
+const ERROR_DISPLAY_DURATION = 3000;
 
 export const App: React.FC = () => {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [status, setStatus] = useState(Status.All);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [title, setTitle] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState(ErrorMessage.None);
+
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!USER_ID) {
@@ -24,7 +27,7 @@ export const App: React.FC = () => {
 
     let isCancelled = false;
 
-    setErrorMessage('');
+    setErrorMessage(ErrorMessage.None);
 
     getTodos()
       .then(loadedTodos => {
@@ -34,7 +37,12 @@ export const App: React.FC = () => {
       })
       .catch(() => {
         if (!isCancelled) {
-          setErrorMessage('Unable to load todos');
+          setErrorMessage(ErrorMessage.Load);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoading(false);
         }
       });
 
@@ -44,34 +52,47 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!errorMessage) {
+    if (!isLoading) {
+      inputRef.current?.focus();
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (errorMessage === ErrorMessage.None) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      setErrorMessage('');
-    }, 3000);
+      setErrorMessage(ErrorMessage.None);
+    }, ERROR_DISPLAY_DURATION);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [errorMessage]);
 
+  const handleCloseError = () => {
+    setErrorMessage(ErrorMessage.None);
+  };
+
   if (!USER_ID) {
     return <UserWarning />;
   }
 
-  const activeTodosCount = todos.filter(todo => !todo.completed).length;
+  const activeTodosCount = todos.filter(({ completed }) => {
+    return !completed;
+  }).length;
+
   const hasTodos = todos.length > 0;
   const allTodosCompleted = hasTodos && activeTodosCount === 0;
 
-  const visibleTodos = todos.filter(todo => {
+  const visibleTodos = todos.filter(({ completed }) => {
     switch (status) {
       case Status.Active:
-        return !todo.completed;
+        return !completed;
 
       case Status.Completed:
-        return todo.completed;
+        return completed;
 
       default:
         return true;
@@ -83,148 +104,28 @@ export const App: React.FC = () => {
       <h1 className="todoapp__title">todos</h1>
 
       <div className="todoapp__content">
-        <header className="todoapp__header">
-          {hasTodos && (
-            <button
-              type="button"
-              className={classNames('todoapp__toggle-all', {
-                active: allTodosCompleted,
-              })}
-              data-cy="ToggleAllButton"
-              aria-label="Toggle all todos"
-              disabled
-            />
-          )}
-
-          <form onSubmit={event => event.preventDefault()}>
-            <input
-              data-cy="NewTodoField"
-              type="text"
-              className="todoapp__new-todo"
-              placeholder="What needs to be done?"
-              disabled
-            />
-          </form>
-        </header>
+        <Header
+          hasTodos={hasTodos}
+          allTodosCompleted={allTodosCompleted}
+          title={title}
+          inputRef={inputRef}
+          onTitleChange={setTitle}
+        />
 
         {hasTodos && (
           <>
-            <section className="todoapp__main" data-cy="TodoList">
-              {visibleTodos.map(todo => (
-                <div
-                  key={todo.id}
-                  data-cy="Todo"
-                  className={classNames('todo', {
-                    completed: todo.completed,
-                  })}
-                >
-                  <label className="todo__status-label">
-                    <input
-                      data-cy="TodoStatus"
-                      type="checkbox"
-                      className="todo__status"
-                      checked={todo.completed}
-                      disabled
-                    />
-                  </label>
+            <TodoList todos={visibleTodos} />
 
-                  <span data-cy="TodoTitle" className="todo__title">
-                    {todo.title}
-                  </span>
-
-                  <button
-                    type="button"
-                    className="todo__remove"
-                    data-cy="TodoDelete"
-                    aria-label="Delete todo"
-                    disabled
-                  >
-                    ×
-                  </button>
-
-                  <div data-cy="TodoLoader" className="modal overlay">
-                    <div
-                      className={classNames(
-                        'modal-background',
-                        'has-background-white-ter',
-                      )}
-                    />
-                    <div className="loader" />
-                  </div>
-                </div>
-              ))}
-            </section>
-
-            <footer className="todoapp__footer" data-cy="Footer">
-              <span className="todo-count" data-cy="TodosCounter">
-                {activeTodosCount} items left
-              </span>
-
-              <nav className="filter" data-cy="Filter">
-                <a
-                  href="#/"
-                  className={classNames('filter__link', {
-                    selected: status === Status.All,
-                  })}
-                  data-cy="FilterLinkAll"
-                  onClick={() => setStatus(Status.All)}
-                >
-                  All
-                </a>
-
-                <a
-                  href="#/active"
-                  className={classNames('filter__link', {
-                    selected: status === Status.Active,
-                  })}
-                  data-cy="FilterLinkActive"
-                  onClick={() => setStatus(Status.Active)}
-                >
-                  Active
-                </a>
-
-                <a
-                  href="#/completed"
-                  className={classNames('filter__link', {
-                    selected: status === Status.Completed,
-                  })}
-                  data-cy="FilterLinkCompleted"
-                  onClick={() => setStatus(Status.Completed)}
-                >
-                  Completed
-                </a>
-              </nav>
-
-              <button
-                type="button"
-                className="todoapp__clear-completed"
-                data-cy="ClearCompletedButton"
-                disabled
-              >
-                Clear completed
-              </button>
-            </footer>
+            <Footer
+              activeTodosCount={activeTodosCount}
+              status={status}
+              onStatusChange={setStatus}
+            />
           </>
         )}
       </div>
 
-      <div
-        data-cy="ErrorNotification"
-        className={classNames(
-          'notification is-danger is-light has-text-weight-normal',
-          { hidden: !errorMessage },
-        )}
-      >
-        <button
-          data-cy="HideErrorButton"
-          type="button"
-          className="delete"
-          aria-label="Close error notification"
-          onClick={() => setErrorMessage('')}
-        />
-
-        {errorMessage}
-      </div>
+      <ErrorNotification message={errorMessage} onClose={handleCloseError} />
     </div>
   );
 };
